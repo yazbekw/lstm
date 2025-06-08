@@ -1321,20 +1321,17 @@ def handle_unknown_callback(call):
 
 
 if __name__ == '__main__':
-    # اختر أحد الخيارين التاليين: الويب هوك أو البولينغ
-
-    # الخيار 1: استخدام الويب هوك (موصى به لـ Render)
+    # حاول استخدام الويب هوك أولاً
     try:
         print("Setting up webhook...")
-        bot.remove_webhook()
-        time.sleep(1)
+        bot.remove_webhook()  # تأكد من إزالة أي ويب هوك سابق
+        time.sleep(2)  # انتظر لضمان إزالة الويب هوك السابق
         
-        # تأكد من تعريف WEBHOOK_DOMAIN في متغيرات البيئة
         webhook_url = f"https://{os.getenv('WEBHOOK_DOMAIN')}/{TELEGRAM_BOT_TOKEN}"
         bot.set_webhook(url=webhook_url)
         print(f"Webhook set to: {webhook_url}")
         
-        # إنشاء خادم Flask للويب هوك
+        # استمرار تشغيل الخادم Flask للويب هوك
         app = Flask(__name__)
 
         @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
@@ -1355,8 +1352,15 @@ if __name__ == '__main__':
 
     except Exception as e:
         print(f"Webhook error: {e}")
-        # الخيار 2: استخدام البولينغ كحل بديل
         print("Falling back to polling...")
         bot.remove_webhook()
-        bot.infinity_polling()
-    
+        time.sleep(2)
+        while True:
+            try:
+                bot.infinity_polling()
+            except (ReadTimeout, ConnectionError) as e:
+                print(f"Connection error: {e}, retrying in 5 seconds...")
+                time.sleep(5)
+            except Exception as e:
+                print(f"Unexpected error: {e}, restarting in 10 seconds...")
+                time.sleep(10)
