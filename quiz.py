@@ -20,6 +20,7 @@ from difflib import SequenceMatcher
 from apscheduler.schedulers.background import BackgroundScheduler
 import pyarabic.araby as araby
 from dotenv import load_dotenv
+from flask import Flask, request
 
 
 # Load environment variables FIRST
@@ -1321,17 +1322,23 @@ def handle_unknown_callback(call):
 
 
 if __name__ == '__main__':
-    # حاول استخدام الويب هوك أولاً
     try:
-        print("Setting up webhook...")
-        bot.remove_webhook()  # تأكد من إزالة أي ويب هوك سابق
-        time.sleep(2)  # انتظر لضمان إزالة الويب هوك السابق
+        # حاول استيراد Flask فقط عند الحاجة
+        from flask import Flask, request
         
-        webhook_url = f"https://{os.getenv('WEBHOOK_DOMAIN')}/{TELEGRAM_BOT_TOKEN}"
+        print("Setting up webhook...")
+        bot.remove_webhook()
+        time.sleep(2)
+        
+        # تحقق من وجود متغير WEBHOOK_DOMAIN
+        webhook_domain = os.getenv('WEBHOOK_DOMAIN')
+        if not webhook_domain:
+            raise ValueError("WEBHOOK_DOMAIN غير معرّف في ملف .env")
+            
+        webhook_url = f"https://{webhook_domain}/{TELEGRAM_BOT_TOKEN}"
         bot.set_webhook(url=webhook_url)
         print(f"Webhook set to: {webhook_url}")
         
-        # استمرار تشغيل الخادم Flask للويب هوك
         app = Flask(__name__)
 
         @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
