@@ -1,0 +1,6 @@
+pyTelegramBotAPI
+apscheduler
+pyarabic
+difflib2
+python-dotenv
+Flask
