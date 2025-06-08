@@ -1280,9 +1280,6 @@ def handle_unknown_callback(call):
     # Log the unhandled callback for debugging
     print(f"Unhandled callback: {call.data}")
     bot.answer_callback_query(call.id, "⚠️ هذا الزر لم يتم تعريفه بعد", show_alert=True)
-@app.route('/')
-def home():
-    return "Bot is running!", 200
 
 
 if __name__ == '__main__':
@@ -1310,6 +1307,10 @@ if __name__ == '__main__':
                 bot.process_new_updates([update])
                 return 'OK', 200
             return 'Bad Request', 400
+
+        @app.route('/')
+        def index():
+            return 'Bot is running!', 200
 
         port = int(os.environ.get('PORT', 10000))
         app.run(host='0.0.0.0', port=port)
