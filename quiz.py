@@ -20,7 +20,6 @@ from difflib import SequenceMatcher
 from apscheduler.schedulers.background import BackgroundScheduler
 import pyarabic.araby as araby
 from dotenv import load_dotenv
-from flask import Flask, request
 
 
 # Load environment variables FIRST
@@ -93,6 +92,13 @@ def init_db():
         feedback_text TEXT NOT NULL,
         rating INTEGER,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (chat_id) REFERENCES users (chat_id)
+    )''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_answered (
+        chat_id INTEGER,
+        question_id TEXT,
+        PRIMARY KEY (chat_id, question_id),
         FOREIGN KEY (chat_id) REFERENCES users (chat_id)
     )''')
     
@@ -268,7 +274,7 @@ def get_question_for_user(chat_id):
     conn = sqlite3.connect('science_bot.db')
     cursor = conn.cursor()
     
-    # 30% chance to get a hard question
+    # 1. التحقق من وجود أسئلة صعبة (30% فرصة)
     if random.random() < 0.3:
         cursor.execute('''
         SELECT question_id FROM hard_questions 
@@ -281,31 +287,49 @@ def get_question_for_user(chat_id):
                 conn.close()
                 return q
     
-    # Get user's selected topic
+    # 2. الحصول على الموضوع المحدد من قبل المستخدم
     cursor.execute('SELECT selected_topic FROM users WHERE chat_id = ?', (chat_id,))
     result = cursor.fetchone()
     selected_topic = result[0] if result else None
     
-    conn.close()
+    # 3. الحصول على الأسئلة التي لم يتم عرضها بعد في هذا الموضوع
+    if selected_topic:
+        cursor.execute('''
+        SELECT q.id FROM questions q
+        WHERE q.topic = ? AND q.id NOT IN (
+            SELECT question_id FROM user_answered 
+            WHERE chat_id = ?
+        ) ORDER BY RANDOM() LIMIT 1
+        ''', (selected_topic, chat_id))
+    else:
+        cursor.execute('''
+        SELECT q.id FROM questions q
+        WHERE q.id NOT IN (
+            SELECT question_id FROM user_answered 
+            WHERE chat_id = ?
+        ) ORDER BY RANDOM() LIMIT 1
+        ''', (chat_id,))
     
+    unanswered = cursor.fetchone()
+    
+    if unanswered:
+        q = next((q for q in questions if q['id'] == unanswered[0]), None)
+        if q:
+            conn.close()
+            return q
+    
+    # 4. إذا أجاب على جميع الأسئلة، نعيد تعيين السجل ونختار سؤال عشوائي
+    cursor.execute('DELETE FROM user_answered WHERE chat_id = ?', (chat_id,))
+    conn.commit()
+    
+    # 5. اختيار سؤال عشوائي من الموضوع المحدد أو جميع الأسئلة
     available_questions = [q for q in questions if q.get('topic', 'عام') == selected_topic] if selected_topic else questions
     if not available_questions:
         print(f"تحذير: لا توجد أسئلة للموضوع {selected_topic} - استخدام أسئلة عامة")
         available_questions = [q for q in questions if q.get('topic', 'عام') == 'عام']
     
+    conn.close()
     return random.choice(available_questions) if available_questions else None
-    
-    if selected_topic:
-        available_questions = [q for q in questions if q.get('topic', 'عام') == selected_topic]
-    else:
-        available_questions = questions
-    
-    print(f"Debug: Available questions count = {len(available_questions)}")  # طباعة عدد الأسئلة المتاحة
-    if not available_questions:
-        print("Debug: No questions available for topic:", selected_topic)  # طباعة الموضوع المحدد
-    
-    return random.choice(available_questions) if available_questions else None
-
 
 def record_question_rating(chat_id, question_id, rating):
     conn = sqlite3.connect('science_bot.db')
@@ -833,12 +857,16 @@ def show_score(message):
 @bot.message_handler(commands=['topics'])
 @handle_errors
 def list_topics(message):
-    # Load topics info
+    # تحميل معلومات المواضيع
     with open('topics_info.json', 'r', encoding='utf-8') as f:
         topics_info = json.load(f)
     
-    # Get all unique topics from questions
+    # الحصول على جميع المواضيع الفريدة من الأسئلة
     all_topics = sorted(list(set(q.get('topic', 'عام') for q in questions)))
+    
+    # التأكد من أن "التكاثر" موجود في القائمة
+    if 'التكاثر' not in all_topics:
+        print("تحذير: موضوع 'التكاثر' غير موجود في الأسئلة!")
     
     response = "📚 المواضيع المتاحة:\n\n"
     for topic in all_topics:
@@ -849,13 +877,8 @@ def list_topics(message):
         response += f"📖 الصفحات: {pages}\n"
         response += f"ℹ️ الوصف: {desc}\n\n"
     
-    # Add buttons for quick selection
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    buttons = [types.InlineKeyboardButton(topic, callback_data=f"select_{topic}") 
-               for topic in all_topics[:10]]  # Show first 10 topics as buttons
-    markup.add(*buttons)
-    
-    bot.send_message(message.chat.id, response, parse_mode="Markdown", reply_markup=markup)
+    # إرسال القائمة
+    bot.send_message(message.chat.id, response, parse_mode="Markdown")
     
 @bot.message_handler(commands=['select_topic'])
 @handle_errors
@@ -1026,6 +1049,13 @@ def handle_text_answer(message):
     )
     bot.send_message(chat_id, "✨ هل تريد محاولة أخرى؟", reply_markup=markup)
     
+    # بعد التأكد من صحة الإجابة
+    conn = sqlite3.connect('science_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR IGNORE INTO user_answered VALUES (?, ?)', (chat_id, q_id))
+    conn.commit()
+    conn.close()
+    
 def generate_feedback(chat_id, question_id, user_answer):
     conn = sqlite3.connect('science_bot.db')
     cursor = conn.cursor()
@@ -1150,6 +1180,13 @@ def handle_choice(call):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("➡️ سؤال جديد", callback_data="next_question"))
     bot.send_message(chat_id, "✨ هل تريد سؤالًا جديدًا؟", reply_markup=markup)
+    
+    # بعد التأكد من صحة الإجابة
+    conn = sqlite3.connect('science_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR IGNORE INTO user_answered VALUES (?, ?)', (chat_id, q_id))
+    conn.commit()
+    conn.close()
 
 @bot.message_handler(commands=['monthly_stats'])
 @handle_errors
