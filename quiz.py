@@ -1283,41 +1283,42 @@ def handle_unknown_callback(call):
 
 
 if __name__ == '__main__':
-    import os
-    from flask import Flask, request
-    import threading
+    # اختر أحد الخيارين التاليين: الويب هوك أو البولينغ
 
-    app = Flask(__name__)
-
-    # Route to handle Telegram webhook updates
-    @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
-    def webhook():
-        update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
-        bot.process_new_updates([update])
-        return 'OK', 200
-
-    # Start Flask server in a thread
-    def run_server():
-        app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
-
-    print("Setting up webhook...")
-    bot.remove_webhook()
-    url = f"https://{os.getenv('WEBHOOK_DOMAIN')}/{TELEGRAM_BOT_TOKEN}" 
-    bot.set_webhook(url=url)
-
-    print("Starting server...")
-    server_thread = threading.Thread(target=run_server)
-    server_thread.start()
-
-    # Keep the main thread alive
+    # الخيار 1: استخدام الويب هوك (موصى به لـ Render)
     try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Stopping bot...")
+        print("Setting up webhook...")
+        bot.remove_webhook()
+        time.sleep(1)
         
+        # تأكد من تعريف WEBHOOK_DOMAIN في متغيرات البيئة
+        webhook_url = f"https://{os.getenv('WEBHOOK_DOMAIN')}/{TELEGRAM_BOT_TOKEN}"
+        bot.set_webhook(url=webhook_url)
+        print(f"Webhook set to: {webhook_url}")
+        
+        # إنشاء خادم Flask للويب هوك
+        app = Flask(__name__)
 
-if __name__ == '__main__':
-    run_bot()
-    
+        @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
+        def webhook():
+            if request.headers.get('content-type') == 'application/json':
+                json_string = request.get_data().decode('utf-8')
+                update = telebot.types.Update.de_json(json_string)
+                bot.process_new_updates([update])
+                return 'OK', 200
+            return 'Bad Request', 400
+
+        @app.route('/')
+        def index():
+            return 'Bot is running!', 200
+
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port)
+
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        # الخيار 2: استخدام البولينغ كحل بديل
+        print("Falling back to polling...")
+        bot.remove_webhook()
+        bot.infinity_polling()
     
