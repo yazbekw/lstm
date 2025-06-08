@@ -1,6 +1,6 @@
 pyTelegramBotAPI
 apscheduler
 pyarabic
-difflib2
+difflib
 python-dotenv
 Flask
