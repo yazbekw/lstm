@@ -20,6 +20,7 @@ from difflib import SequenceMatcher
 from apscheduler.schedulers.background import BackgroundScheduler
 import pyarabic.araby as araby
 from dotenv import load_dotenv
+from flask import Flask, request
 
 
 # Load environment variables FIRST
