@@ -74,6 +74,22 @@ def init_db():
         attempts INTEGER DEFAULT 0,
         selected_topic TEXT
     )''')
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS questions (
+        id TEXT PRIMARY KEY,
+        question TEXT NOT NULL,
+        topic TEXT,
+        page TEXT,
+        type TEXT NOT NULL,
+        choices TEXT,  # سيتم تخزينها كـ JSON
+        correct_indices TEXT,  # سيتم تخزينها كـ JSON
+        answer TEXT,
+        answer_keywords TEXT,  # سيتم تخزينها كـ JSON
+        explanation TEXT,
+        hint TEXT,
+        reference TEXT,
+        difficulty INTEGER DEFAULT 1
+    )''')
     
     # إضافة جدول الدعوات
     cursor.execute('''
@@ -270,7 +286,6 @@ def update_user_last_active(chat_id):
     conn.commit()
     conn.close()
 
-# Question handling functions
 def get_question_for_user(chat_id):
     conn = sqlite3.connect('science_bot.db')
     cursor = conn.cursor()
@@ -296,28 +311,32 @@ def get_question_for_user(chat_id):
     # 3. الحصول على الأسئلة التي لم يتم عرضها بعد في هذا الموضوع
     if selected_topic:
         cursor.execute('''
-        SELECT q.id FROM questions q
-        WHERE q.topic = ? AND q.id NOT IN (
-            SELECT question_id FROM user_answered 
-            WHERE chat_id = ?
-        ) ORDER BY RANDOM() LIMIT 1
-        ''', (selected_topic, chat_id))
+        SELECT question_id FROM user_answered
+        WHERE chat_id = ?
+        ''', (chat_id,))
+        answered_questions = [row[0] for row in cursor.fetchall()]
+        
+        # تصفية الأسئلة بناء على الموضوع والأسئلة المجابة
+        available_questions = [
+            q for q in questions 
+            if q.get('topic', 'عام') == selected_topic 
+            and q['id'] not in answered_questions
+        ]
     else:
         cursor.execute('''
-        SELECT q.id FROM questions q
-        WHERE q.id NOT IN (
-            SELECT question_id FROM user_answered 
-            WHERE chat_id = ?
-        ) ORDER BY RANDOM() LIMIT 1
+        SELECT question_id FROM user_answered
+        WHERE chat_id = ?
         ''', (chat_id,))
+        answered_questions = [row[0] for row in cursor.fetchall()]
+        
+        available_questions = [
+            q for q in questions 
+            if q['id'] not in answered_questions
+        ]
     
-    unanswered = cursor.fetchone()
-    
-    if unanswered:
-        q = next((q for q in questions if q['id'] == unanswered[0]), None)
-        if q:
-            conn.close()
-            return q
+    if available_questions:
+        conn.close()
+        return random.choice(available_questions)
     
     # 4. إذا أجاب على جميع الأسئلة، نعيد تعيين السجل ونختار سؤال عشوائي
     cursor.execute('DELETE FROM user_answered WHERE chat_id = ?', (chat_id,))
