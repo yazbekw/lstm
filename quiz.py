@@ -81,10 +81,10 @@ def init_db():
         topic TEXT,
         page TEXT,
         type TEXT NOT NULL,
-        choices TEXT,  # سيتم تخزينها كـ JSON
-        correct_indices TEXT,  # سيتم تخزينها كـ JSON
+        choices TEXT,  
+        correct_indices TEXT,  
         answer TEXT,
-        answer_keywords TEXT,  # سيتم تخزينها كـ JSON
+        answer_keywords TEXT,  
         explanation TEXT,
         hint TEXT,
         reference TEXT,
