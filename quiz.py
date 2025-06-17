@@ -295,6 +295,11 @@ def get_question_for_user(chat_id):
     conn = sqlite3.connect('science_bot.db')
     cursor = conn.cursor()
     
+    # الحصول على الموضوع المحدد من قبل المستخدم أولاً
+    cursor.execute('SELECT selected_topic FROM users WHERE chat_id = ?', (chat_id,))
+    result = cursor.fetchone()
+    selected_topic = result[0] if result else None
+    
     # 1. التحقق من وجود أسئلة صعبة (30% فرصة)
     if random.random() < 0.3:
         cursor.execute('''
@@ -308,15 +313,7 @@ def get_question_for_user(chat_id):
                 conn.close()
                 return q
                 
-    if selected_topic in ["الفيزياء", "الكيمياء", "العلوم"]:
-        available_questions = [q for q in questions if q.get('subject') == selected_topic]
-    
-    # 2. الحصول على الموضوع المحدد من قبل المستخدم
-    cursor.execute('SELECT selected_topic FROM users WHERE chat_id = ?', (chat_id,))
-    result = cursor.fetchone()
-    selected_topic = result[0] if result else None
-    
-    # 3. الحصول على الأسئلة التي لم يتم عرضها بعد في هذا الموضوع
+    # 2. الحصول على الأسئلة التي لم يتم عرضها بعد في هذا الموضوع
     if selected_topic:
         cursor.execute('''
         SELECT question_id FROM user_answered
@@ -324,7 +321,6 @@ def get_question_for_user(chat_id):
         ''', (chat_id,))
         answered_questions = [row[0] for row in cursor.fetchall()]
         
-        # تصفية الأسئلة بناء على الموضوع والأسئلة المجابة
         available_questions = [
             q for q in questions 
             if q.get('topic', 'عام') == selected_topic 
@@ -346,11 +342,11 @@ def get_question_for_user(chat_id):
         conn.close()
         return random.choice(available_questions)
     
-    # 4. إذا أجاب على جميع الأسئلة، نعيد تعيين السجل ونختار سؤال عشوائي
+    # 3. إذا أجاب على جميع الأسئلة، نعيد تعيين السجل
     cursor.execute('DELETE FROM user_answered WHERE chat_id = ?', (chat_id,))
     conn.commit()
     
-    # 5. اختيار سؤال عشوائي من الموضوع المحدد أو جميع الأسئلة
+    # 4. اختيار سؤال عشوائي من الموضوع المحدد أو جميع الأسئلة
     available_questions = [q for q in questions if q.get('topic', 'عام') == selected_topic] if selected_topic else questions
     if not available_questions:
         print(f"تحذير: لا توجد أسئلة للموضوع {selected_topic} - استخدام أسئلة عامة")
@@ -814,8 +810,14 @@ def send_question(message):
         bot.reply_to(message, "لا توجد أسئلة متاحة حالياً.")
         return
     
+    # تحديد المادة من الموضوع
+    subject = "العلوم"  # افتراضي
+    if 'subject' in q:
+        subject = q['subject']
+    
     # بناء نص السؤال
-    question_text = f"📚 *السؤال* (موضوع: {q.get('topic', 'عام')} - ص {q.get('page', '?')})\n"
+    question_text = f"📚 *{subject}* - {q.get('topic', 'عام')}\n"
+    question_text += f"📖 ص {q.get('page', '?')}\n\n"
     question_text += q['question']
     
     # حفظ السؤال الحالي
@@ -891,29 +893,32 @@ def show_score(message):
 @bot.message_handler(commands=['topics'])
 @handle_errors
 def list_topics(message):
-    # تحميل معلومات المواضيع
-    with open('topics_info.json', 'r', encoding='utf-8') as f:
-        topics_info = json.load(f)
-    
-    # الحصول على جميع المواضيع الفريدة من الأسئلة
-    all_topics = sorted(list(set(q.get('topic', 'عام') for q in questions)))
-    
-    # التأكد من أن "التكاثر" موجود في القائمة
-    if 'التكاثر' not in all_topics:
-        print("تحذير: موضوع 'التكاثر' غير موجود في الأسئلة!")
-    
-    response = "📚 المواضيع المتاحة:\n\n"
-    for topic in all_topics:
-        info = topics_info.get(topic, {})
-        desc = info.get('description', 'لا يوجد وصف متاح')
-        pages = info.get('pages', 'غير محدد')
-        response += f"🔹 *{topic}*\n"
-        response += f"📖 الصفحات: {pages}\n"
-        response += f"ℹ️ الوصف: {desc}\n\n"
-    
-    # إرسال القائمة
-    bot.send_message(message.chat.id, response, parse_mode="Markdown")
-    
+    try:
+        with open('topics_info.json', 'r', encoding='utf-8') as f:
+            topics_info = json.load(f)
+        
+        response = "📚 المواد والمواضيع المتاحة:\n\n"
+        
+        # عرض المواد الرئيسية أولاً
+        for subject, info in topics_info.items():
+            if info.get('type') == 'subject':
+                response += f"🔷 *{subject}*:\n"
+                response += f"ℹ️ {info['description']}\n"
+                response += "📚 المواضيع:\n"
+                for topic in info.get('topics', []):
+                    topic_info = topics_info.get(topic, {})
+                    response += f"- {topic}"
+                    if 'pages' in topic_info:
+                        response += f" (ص {topic_info['pages']})"
+                    response += "\n"
+                response += "\n"
+        
+        bot.send_message(message.chat.id, response, parse_mode="Markdown")
+        
+    except Exception as e:
+        print(f"Error loading topics: {e}")
+        bot.send_message(message.chat.id, "⚠️ حدث خطأ في تحميل قائمة المواضيع")
+        
 @bot.message_handler(commands=['select_topic'])
 @handle_errors
 def select_topic_command(message):
@@ -967,34 +972,48 @@ def handle_topic_selection(message):
 @handle_errors
 def handle_topic_button(call):
     chat_id = call.message.chat.id
-    selected_topic = call.data[7:]  # إزالة البادئة 'select_' من بيانات الاستدعاء
+    selected = call.data[7:]  # إزالة البادئة 'select_'
     
-    # تحديث الموضوع المحدد للمستخدم في قاعدة البيانات
-    conn = sqlite3.connect('science_bot.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET selected_topic = ? WHERE chat_id = ?', 
-                  (selected_topic, chat_id))
-    conn.commit()
-    conn.close()
-    
-    # تحميل معلومات المواضيع من ملف JSON
     with open('topics_info.json', 'r', encoding='utf-8') as f:
         topics_info = json.load(f)
     
-    # الحصول على معلومات الموضوع المحدد
-    topic_info = topics_info.get(selected_topic, {})
-    desc = topic_info.get('description', 'لا يوجد وصف متاح')
-    pages = topic_info.get('pages', 'غير محدد')
+    # التحقق إذا كان المختار مادة أم موضوع
+    if selected in topics_info:
+        info = topics_info[selected]
+        
+        if info.get('type') == 'subject':
+            # إذا كانت مادة، نعرض مواضيعها
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            buttons = [
+                types.InlineKeyboardButton(topic, callback_data=f"select_{topic}")
+                for topic in info.get('topics', [])
+            ]
+            markup.add(*buttons)
+            
+            bot.send_message(
+                chat_id,
+                f"📚 اختر موضوعاً من مادة {selected}:",
+                reply_markup=markup
+            )
+        else:
+            # إذا كان موضوعاً، نختاره
+            conn = sqlite3.connect('science_bot.db')
+            cursor = conn.cursor()
+            cursor.execute('UPDATE users SET selected_topic = ? WHERE chat_id = ?', 
+                         (selected, chat_id))
+            conn.commit()
+            conn.close()
+            
+            response = f"✅ تم اختيار موضوع: *{selected}*\n"
+            if 'description' in info:
+                response += f"ℹ️ {info['description']}\n"
+            if 'pages' in info:
+                response += f"📖 الصفحات: {info['pages']}\n"
+            response += "\nاستخدم /question للحصول على سؤال من هذا الموضوع."
+            
+            bot.send_message(chat_id, response, parse_mode="Markdown")
     
-    # بناء رسالة الرد
-    response = f"✅ تم اختيار موضوع: *{selected_topic}*\n\n"
-    response += f"📖 الصفحات: {pages}\n"
-    response += f"ℹ️ الوصف: {desc}\n\n"
-    response += "استخدم /question للحصول على سؤال من هذا الموضوع."
-    
-    # إرسال الرد مع تأكيد اختيار الموضوع
-    bot.answer_callback_query(call.id)  # إغلاق استدعاء الزر
-    bot.send_message(chat_id, response, parse_mode="Markdown")
+    bot.answer_callback_query(call.id)
   
 # Daily reminder job
 def send_daily_reminders():
