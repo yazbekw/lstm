@@ -2,7 +2,7 @@
 """
 Quiz Telegram Bot
 Bot Name: QuizBot
-Developer: yazbekw
+Developer: eyadc
 """
 
 import os
@@ -21,7 +21,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import pyarabic.araby as araby
 from dotenv import load_dotenv
 from flask import Flask, request
-from flask import render_template_string
 
 
 # Load environment variables FIRST
@@ -56,9 +55,14 @@ scheduler.start()
 
 
     
-with open('questions_full.json', 'r', encoding='utf-8') as f:
-    questions = json.load(f)
-    print(f"Debug: Loaded {len(questions)} questions")  # طباعة عدد الأسئلة المحملة
+questions = []
+for file_name in ['questions_full.json', 'new.json']:
+    try:
+        with open(file_name, 'r', encoding='utf-8') as f:
+            questions.extend(json.load(f))
+            print(f"تم تحميل {len(questions)} سؤالاً من {file_name}")
+    except FileNotFoundError:
+        print(f"تحذير: ملف {file_name} غير موجود")
 
 # إضافة جداول جديدة في init_db()
 def init_db():
@@ -303,6 +307,9 @@ def get_question_for_user(chat_id):
             if q:
                 conn.close()
                 return q
+                
+    if selected_topic in ["الفيزياء", "الكيمياء", "العلوم"]:
+        available_questions = [q for q in questions if q.get('subject') == selected_topic]
     
     # 2. الحصول على الموضوع المحدد من قبل المستخدم
     cursor.execute('SELECT selected_topic FROM users WHERE chat_id = ?', (chat_id,))
@@ -773,7 +780,13 @@ def send_welcome(message):
         types.InlineKeyboardButton('🧪 سؤال جديد', callback_data='new_question'),
         types.InlineKeyboardButton('📊 إحصائياتي', callback_data='my_stats'),
         types.InlineKeyboardButton('📚 المواضيع', callback_data='topics_list'),
-        types.InlineKeyboardButton('📌 اختيار موضوع', callback_data='select_topic'),
+    )
+    markup.row(
+        types.InlineKeyboardButton('⚛️ الفيزياء', callback_data='select_الفيزياء'),
+        types.InlineKeyboardButton('🧪 الكيمياء', callback_data='select_الكيمياء'),
+        types.InlineKeyboardButton('🔬 العلوم', callback_data='select_العلوم')
+    )
+    markup.row(
         types.InlineKeyboardButton('📩 دعوة الأصدقاء', callback_data='invite_friends'),
         types.InlineKeyboardButton('💬 آراء واقتراحات', callback_data='feedback')
     )
@@ -1340,6 +1353,7 @@ def handle_unknown_callback(call):
     print(f"Unhandled callback: {call.data}")
     bot.answer_callback_query(call.id, "⚠️ هذا الزر لم يتم تعريفه بعد", show_alert=True)
 
+
 if __name__ == '__main__':
     try:
         # حاول استيراد Flask فقط عند الحاجة
@@ -1359,158 +1373,6 @@ if __name__ == '__main__':
         print(f"Webhook set to: {webhook_url}")
         
         app = Flask(__name__)
-
-        @app.route('/admin/dashboard')
-        def admin_dashboard():
-            if not ADMIN_CHAT_ID:
-                return "غير مسموح بالوصول", 403
-            
-            conn = sqlite3.connect('science_bot.db')
-            cursor = conn.cursor()
-            
-            # 1. إجمالي عدد المستخدمين
-            cursor.execute('SELECT COUNT(*) FROM users')
-            total_users = cursor.fetchone()[0]
-            
-            # 2. المستخدمين النشطين حالياً (خلال آخر 30 دقيقة)
-            cursor.execute('''
-            SELECT COUNT(*) FROM users 
-            WHERE datetime(last_active) > datetime('now', '-30 minutes')
-            ''')
-            active_users = cursor.fetchone()[0]
-            
-            # 3. الملاحظات الواردة من المستخدمين
-            cursor.execute('''
-            SELECT chat_id, feedback_text, created_at 
-            FROM user_feedback 
-            ORDER BY created_at DESC LIMIT 10
-            ''')
-            feedbacks = cursor.fetchall()
-            
-            conn.close()
-            
-            # HTML template للواجهة
-            template = """
-            <!DOCTYPE html>
-            <html dir="rtl" lang="ar">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>لوحة التحكم - QuizBot</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        margin: 0;
-                        padding: 20px;
-                        background-color: #f5f5f5;
-                    }
-                    .container {
-                        max-width: 1000px;
-                        margin: 0 auto;
-                    }
-                    .header {
-                        background-color: #4CAF50;
-                        color: white;
-                        padding: 15px;
-                        border-radius: 5px;
-                        margin-bottom: 20px;
-                        text-align: center;
-                    }
-                    .stats-container {
-                        display: flex;
-                        justify-content: space-between;
-                        margin-bottom: 20px;
-                    }
-                    .stat-card {
-                        background: white;
-                        border-radius: 5px;
-                        padding: 15px;
-                        width: 30%;
-                        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                        text-align: center;
-                    }
-                    .stat-card h3 {
-                        margin-top: 0;
-                        color: #333;
-                    }
-                    .stat-card .value {
-                        font-size: 24px;
-                        font-weight: bold;
-                        color: #4CAF50;
-                    }
-                    .feedback-card {
-                        background: white;
-                        border-radius: 5px;
-                        padding: 15px;
-                        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                    }
-                    .feedback-item {
-                        border-bottom: 1px solid #eee;
-                        padding: 10px 0;
-                    }
-                    .feedback-item:last-child {
-                        border-bottom: none;
-                    }
-                    .feedback-user {
-                        font-weight: bold;
-                        color: #4CAF50;
-                    }
-                    .feedback-date {
-                        color: #888;
-                        font-size: 12px;
-                    }
-                    .feedback-text {
-                        margin-top: 5px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>لوحة تحكم QuizBot</h1>
-                    </div>
-                    
-                    <div class="stats-container">
-                        <div class="stat-card">
-                            <h3>إجمالي المستخدمين</h3>
-                            <div class="value">{{ total_users }}</div>
-                        </div>
-                        
-                        <div class="stat-card">
-                            <h3>المستخدمين النشطين</h3>
-                            <div class="value">{{ active_users }}</div>
-                        </div>
-                        
-                        <div class="stat-card">
-                            <h3>الملاحظات الجديدة</h3>
-                            <div class="value">{{ feedbacks|length }}</div>
-                        </div>
-                    </div>
-                    
-                    <div class="feedback-card">
-                        <h2>آخر الملاحظات من المستخدمين</h2>
-                        
-                        {% for feedback in feedbacks %}
-                        <div class="feedback-item">
-                            <div>
-                                <span class="feedback-user">مستخدم #{{ feedback[0] }}</span>
-                                <span class="feedback-date">{{ feedback[2] }}</span>
-                            </div>
-                            <div class="feedback-text">{{ feedback[1] }}</div>
-                        </div>
-                        {% else %}
-                        <p>لا توجد ملاحظات حتى الآن</p>
-                        {% endfor %}
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-            
-            return render_template_string(template, 
-                                       total_users=total_users,
-                                       active_users=active_users,
-                                       feedbacks=feedbacks)
 
         @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
         def webhook():
