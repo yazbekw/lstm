@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import sqlite3
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
@@ -7,12 +7,36 @@ from io import BytesIO
 import base64
 import pandas as pd
 import matplotlib
+from flask_httpauth import HTTPBasicAuth
+import telebot
+import os
+from dotenv import load_dotenv
+
 matplotlib.use('Agg')  # هذا السطر مهم لتجنب مشاكل الخيوط
 
+# تحميل متغيرات البيئة
+load_dotenv()
+
+# تهيئة Flask
 app = Flask(__name__)
 
 # تكوين قاعدة البيانات
 DATABASE = 'science_bot.db'
+
+# تهيئة نظام المصادقة
+auth = HTTPBasicAuth()
+
+# تهيئة بوت التليجرام
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+
+# بيانات المصادقة
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+
+@auth.verify_password
+def verify_password(username, password):
+    return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
 
 def get_db_connection():
     conn = sqlite3.connect(DATABASE)
@@ -44,6 +68,7 @@ def generate_plot(data, x, y, title, xlabel, ylabel, plot_type='bar', figsize=(1
     return plot_url
 
 @app.route('/')
+@auth.login_required
 def dashboard():
     conn = get_db_connection()
     
@@ -72,7 +97,7 @@ def dashboard():
     """).fetchone()[0]
     
     avg_session_duration = conn.execute("""
-        SELECT AVG((julianday(end_time) - julianday(start_time)) * 24 * 60) 
+        SELECT AVG((julianday(end_time) - julianday(start_time)) * 24 * 60 
         FROM user_sessions WHERE end_time IS NOT NULL
     """).fetchone()[0] or 0
     
@@ -162,6 +187,7 @@ def dashboard():
                          hours_plot=hours_plot)
 
 @app.route('/feedback')
+@auth.login_required
 def view_feedback():
     conn = get_db_connection()
     
@@ -209,6 +235,7 @@ def view_feedback():
                          rating_filter=rating_filter)
 
 @app.route('/users')
+@auth.login_required
 def view_users():
     conn = get_db_connection()
     
@@ -246,6 +273,7 @@ def view_users():
                          user_stats=user_stats)
 
 @app.route('/questions')
+@auth.login_required
 def view_questions():
     conn = get_db_connection()
     
@@ -281,6 +309,55 @@ def view_questions():
     return render_template('questions.html',
                          questions=questions,
                          question_stats=question_stats)
+
+@app.route('/admin/send_notification', methods=['POST'])
+@auth.login_required
+def send_notification():
+    data = request.json
+    user_ids = data.get('user_ids', [])
+    message = data.get('message', '')
+    
+    if not message:
+        return jsonify({'status': 'error', 'message': 'الرسالة مطلوبة'}), 400
+    
+    conn = get_db_connection()
+    
+    # إرسال لجميع المستخدمين إذا لم يتم تحديد مستخدمين معينين
+    if not user_ids:
+        users = conn.execute('SELECT chat_id FROM users').fetchall()
+        user_ids = [user['chat_id'] for user in users]
+    
+    success_count = 0
+    for user_id in user_ids:
+        try:
+            bot.send_message(user_id, f"📢 إشعار من الإدارة:\n\n{message}")
+            success_count += 1
+        except Exception as e:
+            print(f"Failed to send to {user_id}: {e}")
+    
+    conn.close()
+    return jsonify({
+        'status': 'success',
+        'message': f'تم إرسال الإشعار إلى {success_count}/{len(user_ids)} مستخدم'
+    })
+
+@app.route('/admin/users_list')
+@auth.login_required
+def users_list():
+    conn = get_db_connection()
+    users = conn.execute("""
+        SELECT chat_id, last_active 
+        FROM users 
+        ORDER BY last_active DESC 
+        LIMIT 100
+    """).fetchall()
+    conn.close()
+    return jsonify({
+        'users': [dict(user) for user in users]
+    })
+
+def init_admin_routes(main_app):
+    main_app.register_blueprint(app, url_prefix='/admin')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
