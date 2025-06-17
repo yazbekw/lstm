@@ -8,5 +8,4 @@ matplotlib
 pandas
 APScheduler
 PyArabic
-sqlite3
 requests
