@@ -3,3 +3,10 @@ apscheduler
 pyarabic
 python-dotenv
 Flask
+flask-httpauth
+matplotlib
+pandas
+APScheduler
+PyArabic
+sqlite3
+requests
