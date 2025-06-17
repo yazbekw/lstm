@@ -814,7 +814,7 @@ def send_welcome(message):
             reply_markup=markup,
             parse_mode="Markdown"
         )
-        
+
 @bot.callback_query_handler(func=lambda call: call.data == 'show_subjects')
 def show_subjects(call):
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -827,6 +827,25 @@ def show_subjects(call):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         text="اختر المادة العلمية:",
+        reply_markup=markup
+    )
+    
+@bot.callback_query_handler(func=lambda call: True)
+def handle_unknown_callback(call):
+    # قم بتسجيل البيانات للتحليل
+    print(f"Unhandled callback data: {call.data}")
+    
+    # إرسال رسالة مفيدة للمستخدم
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("العودة للقائمة الرئيسية", callback_data="main_menu"),
+        types.InlineKeyboardButton("الحصول على مساعدة", callback_data="help")
+    )
+    
+    bot.answer_callback_query(call.id, "عذراً، هذا الخيار غير متاح حالياً.")
+    bot.send_message(
+        call.message.chat.id,
+        "⚠️ عذراً، حدث خطأ في معالجة طلبك. يرجى المحاولة مرة أخرى أو استخدام القائمة الرئيسية.",
         reply_markup=markup
     )
     
@@ -999,11 +1018,11 @@ def handle_topic_selection(message):
     
     bot.send_message(chat_id, response, parse_mode="Markdown")
     
-@bot.callback_query_handler(func=lambda call: call.data.startswith('select_'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('select_') or call.data.startswith('subject_'))
 @handle_errors
 def handle_topic_button(call):
     chat_id = call.message.chat.id
-    selected = call.data[7:]  # إزالة البادئة 'select_'
+    selected = call.data.split('_')[1] if call.data.startswith('subject_') else call.data[7:]  # إزالة البادئة 'select_' أو 'subject_'
     
     with open('topics_info.json', 'r', encoding='utf-8') as f:
         topics_info = json.load(f)
@@ -1021,9 +1040,10 @@ def handle_topic_button(call):
             ]
             markup.add(*buttons)
             
-            bot.send_message(
-                chat_id,
-                f"📚 اختر موضوعاً من مادة {selected}:",
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=call.message.message_id,
+                text=f"📚 اختر موضوعاً من مادة {selected}:",
                 reply_markup=markup
             )
         else:
@@ -1408,33 +1428,55 @@ def handle_unknown_callback(call):
 @bot.message_handler(func=lambda message: True)
 @handle_errors
 def handle_unknown_message(message):
-    # قائمة الأوامر المعروفة
-    known_commands = ['/start', '/question', '/topics', '/score', '/feedback', '/invite', '/stats']
+    # قائمة شاملة لجميع الأوامر المعروفة
+    known_commands = [
+        '/start', '/help', '/question', '/topics', 
+        '/score', '/feedback', '/invite', '/stats',
+        '/select_topic', '/explain', '/admin_stats',
+        '/monthly_stats', '/yearly_stats', '/view_feedback'
+    ]
     
-    # إذا كانت الرسالة ليست أمراً معروفاً
+    # تحقق مما إذا كانت الرسالة نصية وليست أمرًا معروفًا
     if message.text and not message.text.startswith(tuple(known_commands)):
+        # رسالة المساعدة المحسنة
         help_text = """
-        ⚠️ لم أفهم طلبك. إليك الأوامر المتاحة:
+        🆘 *لم يتم التعرف على الأمر* ⚠️
         
-        /start - للبدء
-        /question - للحصول على سؤال
-        /topics - لرؤية المواضيع المتاحة
-        /score - لرؤية إحصائياتك
-        /feedback - لإرسال ملاحظاتك
-        /invite - لدعوة الأصدقاء
-        /stats - لرؤية إحصائيات عامة
+        إليك الأوامر المتاحة:
+        
+        📚 *التعلم:*
+        /question - الحصول على سؤال جديد
+        /topics - عرض المواضيع المتاحة
+        /select_topic - اختيار موضوع معين
+        
+        📊 *الإحصائيات:*
+        /score - عرض أدائك
+        /stats - إحصائيات عامة
+        
+        💬 *التفاعل:*
+        /feedback - إرسال ملاحظاتك
+        /invite - دعوة الأصدقاء
+        
+        ❓ *مساعدة:*
+        /help - عرض هذه الرسالة
         """
         
-        # إرسال الرسالة مع أزرار تفاعلية
+        # لوحة أزرار تفاعلية محسنة
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton('بدء الاختبار', callback_data='random_question'),
-            types.InlineKeyboardButton('رؤية المواضيع', callback_data='topics_list'),
+            types.InlineKeyboardButton('عرض المواضيع', callback_data='topics_list'),
             types.InlineKeyboardButton('إحصائياتي', callback_data='my_stats'),
-            types.InlineKeyboardButton('مساعدة', callback_data='help')
+            types.InlineKeyboardButton('مساعدة فورية', callback_data='help')
         )
         
-        bot.reply_to(message, help_text, reply_markup=markup)
+        # إرسال الرسالة مع التنسيق المحسن
+        bot.send_message(
+            message.chat.id,
+            help_text,
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
 
 def is_known_command(text):
     commands = ['/start', '/question', '/topics', '/score']
