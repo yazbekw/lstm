@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="h3 border-bottom pb-2">إدارة المستخدمين</h2>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>تاريخ التسجيل</th>
+            <th>النقاط</th>
+            <th>آخر نشاط</th>
+            <th>إجراءات</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.chat_id }}</td>
+            <td>{{ user.register_date }}</td>
+            <td>{{ user.score }}</td>
+            <td>{{ user.last_active }}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary send-notification" 
+                        data-userid="{{ user.chat_id }}">
+                    <i class="bi bi-send"></i> إرسال
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
