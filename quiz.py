@@ -424,6 +424,7 @@ def process_feedback(message):
             f"📩 ملاحظة جديدة من المستخدم {message.chat.id}:\n\n{message.text}"
         )
 
+# تعديل handle_invite_button و handle_feedback_button
 @bot.callback_query_handler(func=lambda call: call.data == 'invite_friends')
 def handle_invite_button(call):
     invite_command(call.message)
@@ -498,6 +499,7 @@ def get_hint(call):
     
     bot.answer_callback_query(call.id)
     bot.send_message(chat_id, hint_text)
+    bot.answer_callback_query(call.id)
     
 # إضافة هذه الدوال لبدء وإنهاء الجلسة
 def start_user_session(chat_id):
@@ -607,6 +609,7 @@ def admin_stats(message):
     conn.close()
     bot.reply_to(message, report)
 
+# استبدال الدالة show_question_followup()
 def show_question_followup(chat_id, question_id):
     markup = types.InlineKeyboardMarkup()
     markup.row(
@@ -687,12 +690,13 @@ def handle_my_stats(call):
     bot.answer_callback_query(call.id)
     show_score(call.message)
     
+# تعديل handle_explain_callback
 @bot.callback_query_handler(func=lambda call: call.data == 'explain')
 @handle_errors
 def handle_explain_callback(call):
     chat_id = call.message.chat.id
     bot.answer_callback_query(call.id)
-    explain_command_handler(call.message)  # Reuse your existing explain function
+    explain_command_handler(call.message)
 
 @bot.callback_query_handler(func=lambda call: call.data == 'new_question')
 @handle_errors
@@ -829,6 +833,23 @@ def show_subjects(call):
         text="اختر المادة العلمية:",
         reply_markup=markup
     )
+    
+# إضافة هذا المعالج في الأعلى (قبل handle_unknown_callback)
+@bot.callback_query_handler(func=lambda call: call.data == 'show_subjects')
+def handle_show_subjects(call):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton('⚛️ الفيزياء', callback_data='subject_physics'),
+        types.InlineKeyboardButton('🧪 الكيمياء', callback_data='subject_chemistry'),
+        types.InlineKeyboardButton('🔬 العلوم', callback_data='subject_science')
+    )
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text="اختر المادة العلمية:",
+        reply_markup=markup
+    )
+    bot.answer_callback_query(call.id)
     
 @bot.callback_query_handler(func=lambda call: True)
 def handle_unknown_callback(call):
@@ -1294,6 +1315,7 @@ def handle_choice(call):
     cursor.execute('INSERT OR IGNORE INTO user_answered VALUES (?, ?)', (chat_id, q_id))
     conn.commit()
     conn.close()
+    bot.answer_callback_query(call.id)
 
 @bot.message_handler(commands=['monthly_stats'])
 @handle_errors
@@ -1409,18 +1431,47 @@ def handle_rating(call):
     
     show_question_followup(chat_id, q_id)
 
+# تعديل handle_next_question()
 @bot.callback_query_handler(func=lambda call: call.data == 'next_question')
 @handle_errors
 def handle_next_question(call):
     chat_id = call.message.chat.id
     bot.answer_callback_query(call.id)
-    send_question(call.message)  # Reuse the message object
-
+    send_question(call.message)
+    
 import time
 from requests.exceptions import ReadTimeout, ConnectionError
 
 @bot.callback_query_handler(func=lambda call: True)
-def handle_unknown_callback(call):
+def handle_remaining_callbacks(call):
+    """معالج لجميع أنواع الـ callbacks الأخرى"""
+    handlers = {
+        'random_question': handle_random_question,
+        'my_stats': handle_my_stats,
+        'new_question': handle_new_question,
+        'topics_list': handle_topics_list,
+        'select_topic': handle_select_topic,
+        'next_question': handle_next_question,
+        'hint': get_hint,
+        'explain': handle_explain_callback,
+        'feedback': handle_feedback_button,
+        'invite_friends': handle_invite_button,
+        'help': handle_help_button,
+        'main_menu': handle_main_menu,
+        'show_subjects': handle_show_subjects
+    }
+    
+    if call.data in handlers:
+        handlers[call.data](call)
+    elif call.data.startswith('select_') or call.data.startswith('subject_'):
+        handle_topic_button(call)
+    elif call.data.startswith('rate_'):
+        handle_rating(call)
+    elif call.data.startswith('mcq_'):
+        handle_choice(call)
+    else:
+        handle_unknown_callback(call)
+
     # Log the unhandled callback for debugging
     print(f"Unhandled callback: {call.data}")
     bot.answer_callback_query(call.id, "⚠️ هذا الزر لم يتم تعريفه بعد", show_alert=True)
@@ -1482,6 +1533,7 @@ def is_known_command(text):
     commands = ['/start', '/question', '/topics', '/score']
     return any(text.startswith(cmd) for cmd in commands)
 
+# إضافة هذا المعالج
 @bot.callback_query_handler(func=lambda call: call.data == 'help')
 @handle_errors
 def handle_help_button(call):
@@ -1495,10 +1547,15 @@ def handle_help_button(call):
     */feedback* - إرسال ملاحظاتك
     */invite* - مشاركة البوت مع الأصدقاء
     """
-    
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, help_text, parse_mode="Markdown")
     
+# إضافة هذا المعالج
+@bot.callback_query_handler(func=lambda call: call.data == 'main_menu')
+@handle_errors
+def handle_main_menu(call):
+    bot.answer_callback_query(call.id)
+    send_welcome(call.message)
         
 if __name__ == '__main__':
     try:
