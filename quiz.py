@@ -967,9 +967,9 @@ def handle_topic_selection(message):
 @handle_errors
 def handle_topic_button(call):
     chat_id = call.message.chat.id
-    selected_topic = call.data[7:]  # Remove 'select_' prefix
+    selected_topic = call.data[7:]  # إزالة البادئة 'select_' من بيانات الاستدعاء
     
-    # Update user's selected topic in database
+    # تحديث الموضوع المحدد للمستخدم في قاعدة البيانات
     conn = sqlite3.connect('science_bot.db')
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET selected_topic = ? WHERE chat_id = ?', 
@@ -977,22 +977,25 @@ def handle_topic_button(call):
     conn.commit()
     conn.close()
     
-    # Load topics info for description
+    # تحميل معلومات المواضيع من ملف JSON
     with open('topics_info.json', 'r', encoding='utf-8') as f:
         topics_info = json.load(f)
     
+    # الحصول على معلومات الموضوع المحدد
     topic_info = topics_info.get(selected_topic, {})
     desc = topic_info.get('description', 'لا يوجد وصف متاح')
     pages = topic_info.get('pages', 'غير محدد')
     
+    # بناء رسالة الرد
     response = f"✅ تم اختيار موضوع: *{selected_topic}*\n\n"
     response += f"📖 الصفحات: {pages}\n"
     response += f"ℹ️ الوصف: {desc}\n\n"
     response += "استخدم /question للحصول على سؤال من هذا الموضوع."
     
-    bot.answer_callback_query(call.id)
+    # إرسال الرد مع تأكيد اختيار الموضوع
+    bot.answer_callback_query(call.id)  # إغلاق استدعاء الزر
     bot.send_message(chat_id, response, parse_mode="Markdown")
-    
+  
 # Daily reminder job
 def send_daily_reminders():
     conn = sqlite3.connect('science_bot.db')
