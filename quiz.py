@@ -765,39 +765,70 @@ def send_welcome(message):
     init_user(message.chat.id)
     update_user_last_active(message.chat.id)
 
-    # رسالة الترحيب
-    response = """👋 مرحبًا بك في بوت أسئلة العلوم للصف التاسع!
+    # رسالة الترحيب المعدلة
+    response = """
+✨ *مرحباً بك في بوت الصف التاسع!* ✨
 
-🎯 هدفي هو مساعدتك في فهم الدروس وتعزيز مهاراتك من خلال أسئلة تفاعلية."""
+📚 *المحتوى المتاح:*
+- أسئلة فيزيائية (الكهرومغناطيسية - الميكانيكا - الطاقة)
+- أسئلة كيميائية (الحموض - القواعد - المحاليل)
+- أسئلة علمية (التكاثر - الجهاز العصبي - الدورة الدموية)
 
-    # إنشاء لوحة أزرار تفاعلية
+🎯 *كيف تستخدم البوت؟*
+1. اختر المادة العلمية أولاً (/subjects)
+2. اختر موضوعاً محدداً (/topics)
+3. ابدأ حل الأسئلة (/question)
+
+🏆 *ميزات البوت:*
+- تصحيح فوري للإجابات
+- شروحات مفصلة لكل سؤال
+- تتبع تقدمك الدراسي (/score)
+- أسئلة تلائم مستواك
+"""
+
+    # إنشاء لوحة أزرار تفاعلية معدلة
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton('🧪 سؤال جديد', callback_data='new_question'),
+        types.InlineKeyboardButton('📚 المواد العلمية', callback_data='show_subjects'),
+        types.InlineKeyboardButton('🧩 اختيار موضوع', callback_data='select_topic'),
+        types.InlineKeyboardButton('❓ سؤال عشوائي', callback_data='random_question'),
         types.InlineKeyboardButton('📊 إحصائياتي', callback_data='my_stats'),
-        types.InlineKeyboardButton('📚 المواضيع', callback_data='topics_list'),
-    )
-    markup.row(
-        types.InlineKeyboardButton('⚛️ الفيزياء', callback_data='select_الفيزياء'),
-        types.InlineKeyboardButton('🧪 الكيمياء', callback_data='select_الكيمياء'),
-        types.InlineKeyboardButton('🔬 العلوم', callback_data='select_العلوم')
-    )
-    markup.row(
-        types.InlineKeyboardButton('📩 دعوة الأصدقاء', callback_data='invite_friends'),
-        types.InlineKeyboardButton('💬 آراء واقتراحات', callback_data='feedback')
+        types.InlineKeyboardButton('💡 المساعدة', callback_data='help'),
+        types.InlineKeyboardButton('📩 اقتراحات', callback_data='feedback')
     )
 
     try:
-        with open('logo.jpg', 'rb') as photo:
+        with open('welcome_image.jpg', 'rb') as photo:
             bot.send_photo(
                 chat_id=message.chat.id,
                 photo=photo,
                 caption=response,
-                reply_markup=markup
+                reply_markup=markup,
+                parse_mode="Markdown"
             )
     except Exception as e:
         print(f"فشل في إرسال الصورة: {e}")
-        bot.send_message(message.chat.id, response, reply_markup=markup)
+        bot.send_message(
+            message.chat.id, 
+            response, 
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+        
+@bot.callback_query_handler(func=lambda call: call.data == 'show_subjects')
+def show_subjects(call):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton('⚛️ الفيزياء', callback_data='subject_physics'),
+        types.InlineKeyboardButton('🧪 الكيمياء', callback_data='subject_chemistry'),
+        types.InlineKeyboardButton('🔬 العلوم', callback_data='subject_science')
+    )
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text="اختر المادة العلمية:",
+        reply_markup=markup
+    )
     
 @bot.message_handler(commands=['question'])
 @handle_errors
@@ -1368,14 +1399,65 @@ def handle_next_question(call):
 import time
 from requests.exceptions import ReadTimeout, ConnectionError
 
-
 @bot.callback_query_handler(func=lambda call: True)
 def handle_unknown_callback(call):
     # Log the unhandled callback for debugging
     print(f"Unhandled callback: {call.data}")
     bot.answer_callback_query(call.id, "⚠️ هذا الزر لم يتم تعريفه بعد", show_alert=True)
 
+@bot.message_handler(func=lambda message: True)
+@handle_errors
+def handle_unknown_message(message):
+    # قائمة الأوامر المعروفة
+    known_commands = ['/start', '/question', '/topics', '/score', '/feedback', '/invite', '/stats']
+    
+    # إذا كانت الرسالة ليست أمراً معروفاً
+    if message.text and not message.text.startswith(tuple(known_commands)):
+        help_text = """
+        ⚠️ لم أفهم طلبك. إليك الأوامر المتاحة:
+        
+        /start - للبدء
+        /question - للحصول على سؤال
+        /topics - لرؤية المواضيع المتاحة
+        /score - لرؤية إحصائياتك
+        /feedback - لإرسال ملاحظاتك
+        /invite - لدعوة الأصدقاء
+        /stats - لرؤية إحصائيات عامة
+        """
+        
+        # إرسال الرسالة مع أزرار تفاعلية
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton('بدء الاختبار', callback_data='random_question'),
+            types.InlineKeyboardButton('رؤية المواضيع', callback_data='topics_list'),
+            types.InlineKeyboardButton('إحصائياتي', callback_data='my_stats'),
+            types.InlineKeyboardButton('مساعدة', callback_data='help')
+        )
+        
+        bot.reply_to(message, help_text, reply_markup=markup)
 
+def is_known_command(text):
+    commands = ['/start', '/question', '/topics', '/score']
+    return any(text.startswith(cmd) for cmd in commands)
+
+@bot.callback_query_handler(func=lambda call: call.data == 'help')
+@handle_errors
+def handle_help_button(call):
+    help_text = """
+    🆘 *قائمة المساعدة*:
+    
+    */start* - رسالة الترحيب
+    */question* - الحصول على سؤال عشوائي
+    */topics* - عرض المواضيع المتاحة
+    */score* - عرض إحصائياتك
+    */feedback* - إرسال ملاحظاتك
+    */invite* - مشاركة البوت مع الأصدقاء
+    """
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, help_text, parse_mode="Markdown")
+    
+        
 if __name__ == '__main__':
     try:
         # حاول استيراد Flask فقط عند الحاجة
