@@ -800,24 +800,50 @@ def send_welcome(message):
         types.InlineKeyboardButton('💡 المساعدة', callback_data='help'),
         types.InlineKeyboardButton('📩 اقتراحات', callback_data='feedback')
     )
+    
+    if isinstance(message, types.CallbackQuery):
+        chat_id = message.message.chat.id
+        message_id = message.message.message_id
+    else:
+        chat_id = message.chat.id
+        message_id = None
 
     try:
         with open('welcome_image.jpg', 'rb') as photo:
-            bot.send_photo(
-                chat_id=message.chat.id,
-                photo=photo,
-                caption=response,
+            if message_id:
+                # تعديل الرسالة الحالية إذا كانت callback
+                bot.edit_message_media(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    media=types.InputMediaPhoto(photo, caption=response),
+                    reply_markup=markup
+                )
+            else:
+                # إرسال رسالة جديدة إذا كانت أمر مباشر
+                bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo,
+                    caption=response,
+                    reply_markup=markup,
+                    parse_mode="Markdown"
+                )
+    except Exception as e:
+        print(f"فشل في إرسال الصورة: {e}")
+        if message_id:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=response,
                 reply_markup=markup,
                 parse_mode="Markdown"
             )
-    except Exception as e:
-        print(f"فشل في إرسال الصورة: {e}")
-        bot.send_message(
-            message.chat.id, 
-            response, 
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
+        else:
+            bot.send_message(
+                chat_id, 
+                response, 
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
 
 @bot.callback_query_handler(func=lambda call: call.data == 'show_subjects')
 def show_subjects(call):
@@ -834,7 +860,6 @@ def show_subjects(call):
         reply_markup=markup
     )
     
-# إضافة هذا المعالج في الأعلى (قبل handle_unknown_callback)
 @bot.callback_query_handler(func=lambda call: call.data == 'show_subjects')
 def handle_show_subjects(call):
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -1009,35 +1034,41 @@ def select_topic_command(message):
                     "اختر موضوعاً من القائمة أدناه أو اكتب اسم الموضوع:",
                     reply_markup=markup)
 
-@bot.message_handler(func=lambda message: message.text in [q.get('topic', 'عام') for q in questions])
-@handle_errors
-def handle_topic_selection(message):
-    chat_id = message.chat.id
-    selected_topic = message.text
+@bot.callback_query_handler(func=lambda call: call.data.startswith('select_') or call.data.startswith('subject_'))
+def handle_topic_selection(call):
+    chat_id = call.message.chat.id
+    selected = call.data.split('_', 1)[1]  # الحصول على الجزء بعد البادئة
     
-    # Load topics info for description
-    with open('topics_info.json', 'r', encoding='utf-8') as f:
-        topics_info = json.load(f)
-    
-    # Update user's selected topic in database
+    try:
+        with open('topics_info.json', 'r', encoding='utf-8') as f:
+            topics_info = json.load(f)
+    except Exception as e:
+        print(f"Error loading topics: {e}")
+        bot.answer_callback_query(call.id, "حدث خطأ في تحميل المواضيع")
+        return
+
+    # تحديث الموضوع المختار في قاعدة البيانات
     conn = sqlite3.connect('science_bot.db')
     cursor = conn.cursor()
     cursor.execute('UPDATE users SET selected_topic = ? WHERE chat_id = ?', 
-                  (selected_topic, chat_id))
+                  (selected, chat_id))
     conn.commit()
     conn.close()
+
+    # بناء رسالة الرد
+    topic_info = topics_info.get(selected, {})
+    response = f"✅ تم اختيار موضوع: *{selected}*\n"
     
-    # Get topic info
-    topic_info = topics_info.get(selected_topic, {})
-    desc = topic_info.get('description', 'لا يوجد وصف متاح')
-    pages = topic_info.get('pages', 'غير محدد')
+    if 'description' in topic_info:
+        response += f"ℹ️ {topic_info['description']}\n"
     
-    response = f"✅ تم اختيار موضوع: *{selected_topic}*\n\n"
-    response += f"📖 الصفحات: {pages}\n"
-    response += f"ℹ️ الوصف: {desc}\n\n"
-    response += "استخدم /question للحصول على سؤال من هذا الموضوع."
+    if 'pages' in topic_info:
+        response += f"📖 الصفحات: {topic_info['pages']}\n"
+    
+    response += "\nاستخدم /question للحصول على سؤال من هذا الموضوع."
     
     bot.send_message(chat_id, response, parse_mode="Markdown")
+    bot.answer_callback_query(call.id)
     
 @bot.callback_query_handler(func=lambda call: call.data.startswith('select_') or call.data.startswith('subject_'))
 @handle_errors
@@ -1442,6 +1473,35 @@ def handle_next_question(call):
 import time
 from requests.exceptions import ReadTimeout, ConnectionError
 
+def list_topics_command(call):
+    """دالة معدلة لعرض المواضيع عند الضغط على الزر"""
+    try:
+        with open('topics_info.json', 'r', encoding='utf-8') as f:
+            topics_info = json.load(f)
+        
+        response = "📚 المواد والمواضيع المتاحة:\n\n"
+        
+        # عرض المواد الرئيسية أولاً
+        for subject, info in topics_info.items():
+            if info.get('type') == 'subject':
+                response += f"🔷 *{subject}*:\n"
+                response += f"ℹ️ {info['description']}\n"
+                response += "📚 المواضيع:\n"
+                for topic in info.get('topics', []):
+                    topic_info = topics_info.get(topic, {})
+                    response += f"- {topic}"
+                    if 'pages' in topic_info:
+                        response += f" (ص {topic_info['pages']})"
+                    response += "\n"
+                response += "\n"
+        
+        bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+        bot.answer_callback_query(call.id)
+        
+    except Exception as e:
+        print(f"Error loading topics: {e}")
+        bot.answer_callback_query(call.id, "⚠️ حدث خطأ في تحميل قائمة المواضيع")
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_remaining_callbacks(call):
     """معالج لجميع أنواع الـ callbacks الأخرى"""
@@ -1449,7 +1509,7 @@ def handle_remaining_callbacks(call):
         'random_question': handle_random_question,
         'my_stats': handle_my_stats,
         'new_question': handle_new_question,
-        'topics_list': handle_topics_list,
+        'topics_list': list_topics_command,  # استخدام الأمر المباشر بدلاً من الدالة
         'select_topic': handle_select_topic,
         'next_question': handle_next_question,
         'hint': get_hint,
@@ -1457,24 +1517,31 @@ def handle_remaining_callbacks(call):
         'feedback': handle_feedback_button,
         'invite_friends': handle_invite_button,
         'help': handle_help_button,
-        'main_menu': handle_main_menu,
+        'main_menu': send_welcome,
         'show_subjects': handle_show_subjects
     }
     
     if call.data in handlers:
         handlers[call.data](call)
     elif call.data.startswith('select_') or call.data.startswith('subject_'):
-        handle_topic_button(call)
+        handle_topic_selection(call)  # استدعاء الدالة المعدلة
     elif call.data.startswith('rate_'):
         handle_rating(call)
     elif call.data.startswith('mcq_'):
         handle_choice(call)
     else:
-        handle_unknown_callback(call)
-
-    # Log the unhandled callback for debugging
-    print(f"Unhandled callback: {call.data}")
-    bot.answer_callback_query(call.id, "⚠️ هذا الزر لم يتم تعريفه بعد", show_alert=True)
+        # إرسال رسالة خطأ أكثر وصفية
+        error_msg = (
+            "⚠️ عذراً، حدث خطأ في معالجة طلبك.\n"
+            "البيانات المستلمة: " + call.data + "\n"
+            "يرجى المحاولة مرة أخرى أو استخدام القائمة الرئيسية."
+        )
+        bot.answer_callback_query(call.id, error_msg, show_alert=True)
+        
+        # إنشاء لوحة أزرار للعودة
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("العودة للقائمة الرئيسية", callback_data="main_menu"))
+        bot.send_message(call.message.chat.id, error_msg, reply_markup=markup)
 
 @bot.message_handler(func=lambda message: True)
 @handle_errors
