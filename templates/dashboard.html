@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- الشريط الجانبي -->
+            <nav class="col-md-3 col-lg-2 d-md-block bg-dark sidebar collapse">
+                <div class="position-sticky pt-3">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="/admin">
+                                <i class="bi bi-speedometer2"></i> لوحة التحكم
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin/users">
+                                <i class="bi bi-people"></i> المستخدمين
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin/questions">
+                                <i class="bi bi-question-circle"></i> الأسئلة
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin/feedback">
+                                <i class="bi bi-chat-left-text"></i> الملاحظات
+                            </a>
+                        </li>
+                    </ul>
+
+                    <!-- قسم إرسال الإشعارات -->
+                    <hr class="text-white">
+                    <div class="p-3">
+                        <h6 class="text-white">إرسال إشعارات</h6>
+                        <form id="notificationForm">
+                            <div class="mb-3">
+                                <textarea class="form-control" id="notificationMessage" rows="3" placeholder="نص الإشعار..." required></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="bi bi-send"></i> إرسال للجميع
+                            </button>
+                        </form>
+                        <div id="notificationResult" class="mt-2 text-white"></div>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- المحتوى الرئيسي -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
+                <h2 class="h3 border-bottom pb-2">لوحة التحكم</h2>
+                
+                <!-- بطاقات الإحصائيات -->
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card text-white bg-primary mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title">المستخدمون</h5>
+                                <p class="card-text display-6">{{ total_users }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- باقي البطاقات -->
+                </div>
+
+                <!-- الرسوم البيانية -->
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <img src="data:image/png;base64,{{ growth_plot }}" class="img-fluid">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- باقي الرسوم -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+    $(document).ready(function() {
+        $('#notificationForm').submit(function(e) {
+            e.preventDefault();
+            const message = $('#notificationMessage').val();
+            
+            $.ajax({
+                url: '/admin/send_notification',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ message: message }),
+                success: function(response) {
+                    $('#notificationResult').html(`
+                        <div class="alert alert-success">
+                            ${response.message}
+                        </div>
+                    `);
+                },
+                error: function(xhr) {
+                    $('#notificationResult').html(`
+                        <div class="alert alert-danger">
+                            حدث خطأ: ${xhr.responseJSON?.message || 'غير معروف'}
+                        </div>
+                    `);
+                }
+            });
+        });
+    });
+    </script>
+</body>
+</html>
