@@ -596,7 +596,7 @@ def get_question_for_user(chat_id):
     cursor.execute('SELECT question_id FROM user_answered WHERE chat_id = ?', (chat_id,))
     answered_questions = [row[0] for row in cursor.fetchall()]
     
-    # تصفية الأسئلة المتاحة
+    # تصفية الأسئلة المتاحة بناءً على المادة والموضوع المختارين
     available_questions = [
         q for q in questions 
         if (selected_subject is None or q.get('subject', 'العلوم') == selected_subject) and
@@ -604,22 +604,18 @@ def get_question_for_user(chat_id):
         q['id'] not in answered_questions
     ]
     
-    if available_questions:
-        conn.close()
-        return random.choice(available_questions)
-    
-    # إعادة تعيين الأسئلة المجابة إذا لم توجد أسئلة جديدة
-    cursor.execute('DELETE FROM user_answered WHERE chat_id = ?', (chat_id,))
-    conn.commit()
-    
-    # إعادة المحاولة بعد إعادة التعيين
-    available_questions = [
-        q for q in questions 
-        if (selected_subject is None or q.get('subject', 'العلوم') == selected_subject) and
-        (selected_topic is None or q.get('topic', 'عام') == selected_topic)
-    ]
+    if not available_questions:
+        # إعادة تعيين الأسئلة المجابة إذا لم توجد أسئلة جديدة
+        cursor.execute('DELETE FROM user_answered WHERE chat_id = ?', (chat_id,))
+        conn.commit()
+        available_questions = [
+            q for q in questions 
+            if (selected_subject is None or q.get('subject', 'العلوم') == selected_subject) and
+            (selected_topic is None or q.get('topic', 'عام') == selected_topic)
+        ]
     
     conn.close()
+    
     return random.choice(available_questions) if available_questions else None
 
 
@@ -1635,25 +1631,48 @@ def show_score(message):
 
 
 
-# في دالة list_topics (عرض المواضيع)
 @bot.message_handler(commands=['topics'])
 @handle_errors
 def list_topics(message):
     chat_id = message.chat.id
     
-    # إنشاء لوحة أزرار لاختيار المواضيع والإجراءات
+    # الحصول على المادة المختارة من قاعدة البيانات
+    conn = sqlite3.connect('science_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT selected_subject FROM users WHERE chat_id = ?', (chat_id,))
+    result = cursor.fetchone()
+    selected_subject = result[0] if result else 'العلوم'
+    conn.close()
+    
+    # تحميل المواضيع من الهيكل الجديد
+    with open('topics_info.json', 'r', encoding='utf-8') as f:
+        topics_data = json.load(f)
+    
+    if selected_subject not in topics_data['subjects']:
+        bot.send_message(chat_id, "⚠️ المادة المختارة غير متوفرة حالياً.")
+        return
+    
+    subject_topics = topics_data['subjects'][selected_subject]['topics']
+    
+    # إنشاء لوحة أزرار للمواضيع
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton('اختيار من المواضيع', callback_data='select_topic'),
-        types.InlineKeyboardButton('سؤال عشوائي', callback_data='random_question')
-    )
+    buttons = [
+        types.InlineKeyboardButton(
+            text=topic_name,
+            callback_data=f"select_{topic_name}"
+        ) for topic_name in subject_topics.keys()
+    ]
+    markup.add(*buttons)
+    
+    # إضافة زر السؤال العشوائي
+    markup.row(types.InlineKeyboardButton("🎲 سؤال عشوائي", callback_data="random_question"))
     
     bot.send_message(
         chat_id,
-        "📚 اختر أحد الخيارات التالية:",
-        reply_markup=markup
+        f"📚 مواضيع مادة *{selected_subject}*:\n\nاختر موضوعاً من القائمة:",
+        reply_markup=markup,
+        parse_mode="Markdown"
     )
-    
 
 @bot.message_handler(commands=['select_topic'])
 @handle_errors
@@ -1685,60 +1704,51 @@ def select_topic_command(message):
                     parse_mode="Markdown")
 
 
-@bot.message_handler(func=lambda message: message.text in [q.get('topic', 'عام') for q in questions])
-
+@bot.callback_query_handler(func=lambda call: call.data.startswith('select_'))
 @handle_errors
-
-def handle_topic_selection(message):
-
-    chat_id = message.chat.id
-
-    selected_topic = message.text
-
+def handle_topic_selection(call):
+    chat_id = call.message.chat.id
+    topic_name = call.data[7:]  # إزالة 'select_' من البيانات
     
-
-    # Load topics info for description
-
     with open('topics_info.json', 'r', encoding='utf-8') as f:
-
-        topics_info = json.load(f)
-
+        topics_data = json.load(f)
     
-
-    # Update user's selected topic in database
-
+    # البحث عن الموضوع في جميع المواد
+    topic_info = None
+    subject_name = None
+    
+    for subject, subject_data in topics_data['subjects'].items():
+        if topic_name in subject_data['topics']:
+            topic_info = subject_data['topics'][topic_name]
+            subject_name = subject
+            break
+    
+    if not topic_info:
+        bot.answer_callback_query(call.id, "⚠️ الموضوع غير موجود")
+        return
+    
+    # تحديث الموضوع المختار في قاعدة البيانات
     conn = sqlite3.connect('science_bot.db')
-
     cursor = conn.cursor()
-
-    cursor.execute('UPDATE users SET selected_topic = ? WHERE chat_id = ?', 
-
-                  (selected_topic, chat_id))
-
+    cursor.execute('''
+        UPDATE users 
+        SET selected_topic = ?, selected_subject = ?
+        WHERE chat_id = ?
+    ''', (topic_name, subject_name, chat_id))
     conn.commit()
-
     conn.close()
-
     
-
-    # Get topic info
-
-    topic_info = topics_info.get(selected_topic, {})
-
-    desc = topic_info.get('description', 'لا يوجد وصف متاح')
-
-    pages = topic_info.get('pages', 'غير محدد')
-
+    # إرسال تفاصيل الموضوع
+    response = (
+        f"✅ تم اختيار موضوع: *{topic_name}*\n\n"
+        f"📖 الصفحات: {topic_info['pages']}\n"
+        f"📝 الوصف: {topic_info['description']}\n"
+        f"📊 مستوى الصعوبة: {topic_info['difficulty']}\n\n"
+        "استخدم /question للحصول على سؤال من هذا الموضوع."
+    )
     
-
-    response = f"✅ تم اختيار موضوع: *{selected_topic}*\n\n"
-
-    response += f"📖 الصفحات: {pages}\n"
-
-    response += f"ℹ️ الوصف: {desc}\n\n"
-
-    response += "استخدم /question للحصول على سؤال من هذا الموضوع."
-
+    bot.answer_callback_query(call.id)
+    bot.send_message(chat_id, response, parse_mode="Markdown")
     
 
     bot.send_message(chat_id, response, parse_mode="Markdown")
@@ -2525,6 +2535,7 @@ def handle_unknown_callback(call):
     
 
 # إضافة معالج للأزرار الجديدة
+
 @bot.callback_query_handler(func=lambda call: call.data == 'help_menu')
 @handle_errors
 def handle_help_menu(call):
@@ -2534,20 +2545,18 @@ def handle_help_menu(call):
     help_text = """
 🆘 قائمة المساعدة:
 
-📚 لبدء الاختبار:
-- استخدم /question أو اضغط على "بدء الاختبار"
-- اختر المادة أولاً إذا لم تكن محددة
+📌 الأوامر الرئيسية:
+/start - بدء استخدام البوت
+/question - الحصول على سؤال جديد
+/topics - عرض المواضيع المتاحة
+/score - عرض إحصائياتك
 
-📊 لمشاهدة إحصائياتك:
-- استخدم /score أو اضغط على "إحصائياتي"
+📩 التواصل:
+/feedback - إرسال ملاحظاتك
+/invite - دعوة الأصدقاء
 
-📩 لدعوة الأصدقاء:
-- استخدم /invite أو اضغط على "دعوة صديق"
-
-📝 لإرسال ملاحظاتك:
-- استخدم /feedback أو اضغط على "إرسال رسالة"
+❓ يمكنك الضغط على الأزرار الظاهرة للوصول السريع للوظائف
 """
-    
     bot.send_message(chat_id, help_text)
 
 @bot.callback_query_handler(func=lambda call: call.data == 'send_feedback')
@@ -2555,7 +2564,8 @@ def handle_help_menu(call):
 def handle_send_feedback(call):
     chat_id = call.message.chat.id
     bot.answer_callback_query(call.id)
-    feedback_command(call.message)  #
+    # استدعاء نفس دالة الأمر /feedback
+    feedback_command(call.message)
 
 
 # في دالة handle_unknown_message (عند كتابة كلمة عشوائية)
