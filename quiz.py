@@ -1446,6 +1446,12 @@ def send_welcome(message):
         types.InlineKeyboardButton('📝 إرسال رسالة', callback_data='send_feedback'),
         types.InlineKeyboardButton('🆘 المساعدة', callback_data='help_menu')
     )
+    markup.add(
+        types.InlineKeyboardButton(
+            text=f"{subject} - {topics_data['subjects'][subject]['description']}",
+            callback_data=f'subject_{subject}'
+        )
+    )
 
     try:
         with open('logo.jpg', 'rb') as photo:
@@ -2590,104 +2596,200 @@ def handle_unknown_message(message):
     )
 
 
+# إضافة هذا قبل الجزء الخاص بتشغيل البوت
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    if not ADMIN_CHAT_ID:
+        return "غير مسموح بالوصول", 403
+    
+    conn = sqlite3.connect('science_bot.db')
+    cursor = conn.cursor()
+    
+    # 1. إجمالي عدد المستخدمين
+    cursor.execute('SELECT COUNT(*) FROM users')
+    total_users = cursor.fetchone()[0]
+    
+    # 2. المستخدمين النشطين حالياً (خلال آخر 30 دقيقة)
+    cursor.execute('''
+    SELECT COUNT(*) FROM users 
+    WHERE datetime(last_active) > datetime('now', '-30 minutes')
+    ''')
+    active_users = cursor.fetchone()[0]
+    
+    # 3. الملاحظات الواردة من المستخدمين
+    cursor.execute('''
+    SELECT chat_id, feedback_text, created_at 
+    FROM user_feedback 
+    ORDER BY created_at DESC LIMIT 10
+    ''')
+    feedbacks = cursor.fetchall()
+    
+    conn.close()
+    
+    # HTML template للواجهة
+    template = """
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>لوحة التحكم - QuizBot</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }
+            .container {
+                max-width: 1000px;
+                margin: 0 auto;
+            }
+            .header {
+                background-color: #4CAF50;
+                color: white;
+                padding: 15px;
+                border-radius: 5px;
+                margin-bottom: 20px;
+                text-align: center;
+            }
+            .stats-container {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 20px;
+            }
+            .stat-card {
+                background: white;
+                border-radius: 5px;
+                padding: 15px;
+                width: 30%;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                text-align: center;
+            }
+            .stat-card h3 {
+                margin-top: 0;
+                color: #333;
+            }
+            .stat-card .value {
+                font-size: 24px;
+                font-weight: bold;
+                color: #4CAF50;
+            }
+            .feedback-card {
+                background: white;
+                border-radius: 5px;
+                padding: 15px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+            .feedback-item {
+                border-bottom: 1px solid #eee;
+                padding: 10px 0;
+            }
+            .feedback-item:last-child {
+                border-bottom: none;
+            }
+            .feedback-user {
+                font-weight: bold;
+                color: #4CAF50;
+            }
+            .feedback-date {
+                color: #888;
+                font-size: 12px;
+            }
+            .feedback-text {
+                margin-top: 5px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>لوحة تحكم QuizBot</h1>
+            </div>
+            
+            <div class="stats-container">
+                <div class="stat-card">
+                    <h3>إجمالي المستخدمين</h3>
+                    <div class="value">{{ total_users }}</div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>المستخدمين النشطين</h3>
+                    <div class="value">{{ active_users }}</div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>الملاحظات الجديدة</h3>
+                    <div class="value">{{ feedbacks|length }}</div>
+                </div>
+            </div>
+            
+            <div class="feedback-card">
+                <h2>آخر الملاحظات من المستخدمين</h2>
+                
+                {% for feedback in feedbacks %}
+                <div class="feedback-item">
+                    <div>
+                        <span class="feedback-user">مستخدم #{{ feedback[0] }}</span>
+                        <span class="feedback-date">{{ feedback[2] }}</span>
+                    </div>
+                    <div class="feedback-text">{{ feedback[1] }}</div>
+                </div>
+                {% else %}
+                <p>لا توجد ملاحظات حتى الآن</p>
+                {% endfor %}
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return render_template_string(template, 
+                               total_users=total_users,
+                               active_users=active_users,
+                               feedbacks=feedbacks)
+
 
 
 if __name__ == '__main__':
-
     try:
-
         # حاول استيراد Flask فقط عند الحاجة
-
         from flask import Flask, request
-
-        
-
         print("Setting up webhook...")
-
         bot.remove_webhook()
-
         time.sleep(2)
-
-        
-
         # تحقق من وجود متغير WEBHOOK_DOMAIN
-
         webhook_domain = os.getenv('WEBHOOK_DOMAIN')
-
         if not webhook_domain:
-
-            raise ValueError("WEBHOOK_DOMAIN غير معرّف في ملف .env")
-
-            
-
+            raise ValueError("WEBHOOK_DOMAIN غير معرّف في ملف .env")            
         webhook_url = f"https://{webhook_domain}/{TELEGRAM_BOT_TOKEN}"
-
         bot.set_webhook(url=webhook_url)
-
-        print(f"Webhook set to: {webhook_url}")
-
-        
-
+        print(f"Webhook set to: {webhook_url}")        
         app = Flask(__name__)
-
-
-
         @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
-
         def webhook():
-
             if request.headers.get('content-type') == 'application/json':
-
                 json_string = request.get_data().decode('utf-8')
-
                 update = telebot.types.Update.de_json(json_string)
-
                 bot.process_new_updates([update])
-
                 return 'OK', 200
-
             return 'Bad Request', 400
-
-
-
         @app.route('/')
-
         def index():
-
             return 'Bot is running!', 200
-
-
-
         port = int(os.environ.get('PORT', 10000))
-
         app.run(host='0.0.0.0', port=port)
-
-
-
     except Exception as e:
-
         print(f"Webhook error: {e}")
-
         print("Falling back to polling...")
-
         bot.remove_webhook()
-
         time.sleep(2)
-
         while True:
-
             try:
-
                 bot.infinity_polling()
-
             except (ReadTimeout, ConnectionError) as e:
-
                 print(f"Connection error: {e}, retrying in 5 seconds...")
-
                 time.sleep(5)
-
             except Exception as e:
-
                 print(f"Unexpected error: {e}, restarting in 10 seconds...")
-
                 time.sleep(10)
