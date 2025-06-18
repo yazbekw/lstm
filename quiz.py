@@ -1416,32 +1416,17 @@ def feedback_stats(message):
     bot.reply_to(message, response)
 
 
-
-# Command handlers
-
 @bot.message_handler(commands=['start', 'help'])
-
 @handle_errors
-
 def send_welcome(message):
-
     # معالجة روابط الدعوة
-
     if len(message.text.split()) > 1:
-
         invite_code = message.text.split()[1]
-
         if invite_code.startswith('INV_'):
-
             record_invite_use(invite_code, message.chat.id)
-
             
-
     init_user(message.chat.id)
-
     update_user_last_active(message.chat.id)
-
-
 
     # رسالة الترحيب المحدثة
     response = """👋 مرحبًا بك في المعلم الذكي للصف التاسع!
@@ -1450,35 +1435,32 @@ def send_welcome(message):
 
 📚 الرجاء اختيار المادة:"""
 
-    # إنشاء لوحة أزرار للمواد
+    # إنشاء لوحة أزرار للمواد والإجراءات
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton('العلوم', callback_data='subject_العلوم'),
         types.InlineKeyboardButton('الفيزياء', callback_data='subject_الفيزياء'),
         types.InlineKeyboardButton('الكيمياء', callback_data='subject_الكيمياء')
     )
-    
+    markup.row(
+        types.InlineKeyboardButton('📊 إحصائياتي', callback_data='my_stats'),
+        types.InlineKeyboardButton('📩 دعوة صديق', callback_data='invite_friends')
+    )
+    markup.row(
+        types.InlineKeyboardButton('📝 إرسال رسالة', callback_data='send_feedback'),
+        types.InlineKeyboardButton('🆘 المساعدة', callback_data='help_menu')
+    )
 
     try:
-
         with open('logo.jpg', 'rb') as photo:
-
             bot.send_photo(
-
                 chat_id=message.chat.id,
-
                 photo=photo,
-
                 caption=response,
-
                 reply_markup=markup
-
             )
-
     except Exception as e:
-
         print(f"فشل في إرسال الصورة: {e}")
-
         bot.send_message(message.chat.id, response, reply_markup=markup)
 
     
@@ -1653,37 +1635,24 @@ def show_score(message):
 
 
 
+# في دالة list_topics (عرض المواضيع)
 @bot.message_handler(commands=['topics'])
 @handle_errors
 def list_topics(message):
     chat_id = message.chat.id
     
-    # الحصول على المادة المختارة
-    conn = sqlite3.connect('science_bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT selected_subject FROM users WHERE chat_id = ?', (chat_id,))
-    result = cursor.fetchone()
-    selected_subject = result[0] if result else 'العلوم'
-    conn.close()
-
-    # تحميل معلومات المواضيع للمادة المختارة
-    with open('topics_info.json', 'r', encoding='utf-8') as f:
-        topics_info = json.load(f)
+    # إنشاء لوحة أزرار لاختيار المواضيع والإجراءات
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton('اختيار من المواضيع', callback_data='select_topic'),
+        types.InlineKeyboardButton('سؤال عشوائي', callback_data='random_question')
+    )
     
-    response = f"📚 المواضيع المتاحة لمادة *{selected_subject}*:\n\n"
-    
-    # عرض مواضيع المادة المختارة فقط
-    subject_topics = topics_info.get(selected_subject, {}).get('topics', [])
-    for topic in subject_topics:
-        topic_info = topics_info.get(topic, {})
-        desc = topic_info.get('description', 'لا يوجد وصف متاح')
-        pages = topic_info.get('pages', 'غير محدد')
-        response += f"🔹 *{topic}*\n"
-        response += f"📖 الصفحات: {pages}\n"
-        response += f"ℹ️ الوصف: {desc}\n\n"
-    
-    bot.send_message(chat_id, response, parse_mode="Markdown")
-
+    bot.send_message(
+        chat_id,
+        "📚 اختر أحد الخيارات التالية:",
+        reply_markup=markup
+    )
     
 
 @bot.message_handler(commands=['select_topic'])
@@ -2553,24 +2522,63 @@ def handle_unknown_callback(call):
     print(f"Unhandled callback: {call.data}")
 
     bot.answer_callback_query(call.id, "⚠️ هذا الزر لم يتم تعريفه بعد", show_alert=True)
+    
 
+# إضافة معالج للأزرار الجديدة
+@bot.callback_query_handler(func=lambda call: call.data == 'help_menu')
+@handle_errors
+def handle_help_menu(call):
+    chat_id = call.message.chat.id
+    bot.answer_callback_query(call.id)
+    
+    help_text = """
+🆘 قائمة المساعدة:
+
+📚 لبدء الاختبار:
+- استخدم /question أو اضغط على "بدء الاختبار"
+- اختر المادة أولاً إذا لم تكن محددة
+
+📊 لمشاهدة إحصائياتك:
+- استخدم /score أو اضغط على "إحصائياتي"
+
+📩 لدعوة الأصدقاء:
+- استخدم /invite أو اضغط على "دعوة صديق"
+
+📝 لإرسال ملاحظاتك:
+- استخدم /feedback أو اضغط على "إرسال رسالة"
+"""
+    
+    bot.send_message(chat_id, help_text)
+
+@bot.callback_query_handler(func=lambda call: call.data == 'send_feedback')
+@handle_errors
+def handle_send_feedback(call):
+    chat_id = call.message.chat.id
+    bot.answer_callback_query(call.id)
+    feedback_command(call.message)  #
+
+
+# في دالة handle_unknown_message (عند كتابة كلمة عشوائية)
 @bot.message_handler(func=lambda message: True)
 @handle_errors
 def handle_unknown_message(message):
-    help_text = """
-⚠️ لم أفهم طلبك. إليك الأوامر المتاحة:
+    # إنشاء لوحة أزرار للمساعدة
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton('بدء الاختبار', callback_data='start_quiz'),
+        types.InlineKeyboardButton('المواضيع', callback_data='topics_list')
+    )
+    markup.row(
+        types.InlineKeyboardButton('المساعدة', callback_data='help_menu'),
+        types.InlineKeyboardButton('الإحصائيات', callback_data='my_stats')
+    )
+    
+    bot.reply_to(
+        message,
+        "⚠️ لم أفهم طلبك. إليك بعض الخيارات التي قد تساعدك:",
+        reply_markup=markup
+    )
 
-/start - بدء استخدام البوت
-/question - الحصول على سؤال جديد
-/topics - عرض المواضيع المتاحة
-/select_topic - اختيار موضوع معين
-/score - عرض إحصائياتك
-/invite - دعوة الأصدقاء
-/feedback - إرسال ملاحظاتك
-
-يمكنك أيضاً استخدام الأزرار في القائمة السفلية.
-"""
-    bot.reply_to(message, help_text)
 
 
 
