@@ -42,7 +42,9 @@ import pyarabic.araby as araby
 
 from dotenv import load_dotenv
 
-from flask import Flask, request
+from flask import Flask, request, render_template_string
+
+app = Flask(__name__)
 
 
 
@@ -62,7 +64,6 @@ ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", 0))
 
 
 
-app = Flask(__name__)
 
 
 
@@ -1446,12 +1447,7 @@ def send_welcome(message):
         types.InlineKeyboardButton('📝 إرسال رسالة', callback_data='send_feedback'),
         types.InlineKeyboardButton('🆘 المساعدة', callback_data='help_menu')
     )
-    markup.add(
-        types.InlineKeyboardButton(
-            text=f"{subject} - {topics_data['subjects'][subject]['description']}",
-            callback_data=f'subject_{subject}'
-        )
-    )
+    
 
     try:
         with open('logo.jpg', 'rb') as photo:
@@ -1697,7 +1693,7 @@ def select_topic_command(message):
     with open('topics_info.json', 'r', encoding='utf-8') as f:
         topics_info = json.load(f)
     
-    subject_topics = topics_info.get(selected_subject, {}).get('topics', [])
+    subject_topics = topics_info['subjects'][selected_subject]['topics'].keys()
     
     # إنشاء لوحة أزرار للمواضيع
     markup = types.ReplyKeyboardMarkup(row_width=2, one_time_keyboard=True)
@@ -1708,7 +1704,28 @@ def select_topic_command(message):
                     f"📚 اختر موضوعاً من مادة *{selected_subject}*:",
                     reply_markup=markup, 
                     parse_mode="Markdown")
-
+                    
+def record_invite_use(invite_code, new_user_id):
+    conn = sqlite3.connect('science_bot.db')
+    cursor = conn.cursor()
+    
+    # البحث عن المستخدم الداعي
+    cursor.execute('SELECT chat_id FROM user_invites WHERE invite_code = ?', (invite_code,))
+    inviter = cursor.fetchone()
+    
+    if not inviter:
+        return  # لم يتم العثور على الدعوة
+    
+    inviter_id = inviter[0]
+    
+    # تحديث عدد استخدامات الدعوة
+    cursor.execute('UPDATE user_invites SET uses = uses + 1 WHERE invite_code = ?', (invite_code,))
+    
+    # منح 5 نقاط للمستخدم الداعي
+    cursor.execute('UPDATE users SET score = score + 5 WHERE chat_id = ?', (inviter_id,))
+    
+    conn.commit()
+    conn.close()
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('select_'))
 @handle_errors
@@ -2195,6 +2212,16 @@ def record_answer_analysis(chat_id, question_id, user_answer, is_correct, accura
 
     conn.close()
 
+def show_question_followup(chat_id, question_id):
+    markup = types.InlineKeyboardMarkup()
+    markup.row(
+        types.InlineKeyboardButton("سهل 👍", callback_data=f"rate_easy_{question_id}"),
+        types.InlineKeyboardButton("صعب 👎", callback_data=f"rate_hard_{question_id}")
+    )
+    markup.row(
+        types.InlineKeyboardButton("سؤال آخر ➡️", callback_data="next_question")
+    )
+    bot.send_message(chat_id, "كيف تقيم هذا السؤال؟", reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('mcq_'))
@@ -2746,13 +2773,14 @@ def admin_dashboard():
     </html>
     """
     
-    return render_template_string(template, 
+    from flask import render_template_string(template, 
                                total_users=total_users,
                                active_users=active_users,
                                feedbacks=feedbacks)
 
 
 
+# نقل هذا الجزء إلى نهاية الكود بعد تعريف جميع الدوال
 if __name__ == '__main__':
     try:
         print("Setting up webhook...")
