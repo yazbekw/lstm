@@ -2779,7 +2779,6 @@ def admin_dashboard():
                                feedbacks=feedbacks)
 
 
-
 @app.route('/admin/dashboard')
 def admin_dashboard():
     if not ADMIN_CHAT_ID:
@@ -2812,7 +2811,8 @@ def admin_dashboard():
     # HTML template للواجهة
     template = """
     <!DOCTYPE html>
-    <!-- Your HTML template here -->
+    <html dir="rtl" lang="ar">
+    <!-- Rest of your template here -->
     """
     
     return render_template_string(template, 
