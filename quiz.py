@@ -2780,31 +2780,42 @@ def admin_dashboard():
 
 
 
-# نقل هذا الجزء إلى نهاية الكود بعد تعريف جميع الدوال
-if __name__ == '__main__':
-    try:
-        print("Setting up webhook...")
-        bot.remove_webhook()
-        time.sleep(2)
-        webhook_domain = os.getenv('WEBHOOK_DOMAIN')
-        if not webhook_domain:
-            raise ValueError("WEBHOOK_DOMAIN غير معرّف في ملف .env")            
-        webhook_url = f"https://{webhook_domain}/{TELEGRAM_BOT_TOKEN}"
-        bot.set_webhook(url=webhook_url)
-        print(f"Webhook set to: {webhook_url}")        
-        port = int(os.environ.get('PORT', 10000))
-        app.run(host='0.0.0.0', port=port)
-    except Exception as e:
-        print(f"Webhook error: {e}")
-        print("Falling back to polling...")
-        bot.remove_webhook()
-        time.sleep(2)
-        while True:
-            try:
-                bot.infinity_polling()
-            except (ReadTimeout, ConnectionError) as e:
-                print(f"Connection error: {e}, retrying in 5 seconds...")
-                time.sleep(5)
-            except Exception as e:
-                print(f"Unexpected error: {e}, restarting in 10 seconds...")
-                time.sleep(10)
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    if not ADMIN_CHAT_ID:
+        return "غير مسموح بالوصول", 403
+    
+    conn = sqlite3.connect('science_bot.db')
+    cursor = conn.cursor()
+    
+    # 1. إجمالي عدد المستخدمين
+    cursor.execute('SELECT COUNT(*) FROM users')
+    total_users = cursor.fetchone()[0]
+    
+    # 2. المستخدمين النشطين حالياً (خلال آخر 30 دقيقة)
+    cursor.execute('''
+    SELECT COUNT(*) FROM users 
+    WHERE datetime(last_active) > datetime('now', '-30 minutes')
+    ''')
+    active_users = cursor.fetchone()[0]
+    
+    # 3. الملاحظات الواردة من المستخدمين
+    cursor.execute('''
+    SELECT chat_id, feedback_text, created_at 
+    FROM user_feedback 
+    ORDER BY created_at DESC LIMIT 10
+    ''')
+    feedbacks = cursor.fetchall()
+    
+    conn.close()
+    
+    # HTML template للواجهة
+    template = """
+    <!DOCTYPE html>
+    <!-- Your HTML template here -->
+    """
+    
+    return render_template_string(template, 
+                               total_users=total_users,
+                               active_users=active_users,
+                               feedbacks=feedbacks)
