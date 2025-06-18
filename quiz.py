@@ -62,7 +62,7 @@ ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", 0))
 
 
 
-
+app = Flask(__name__)
 
 
 
@@ -2596,6 +2596,7 @@ def handle_unknown_message(message):
     )
 
 
+
 # إضافة هذا قبل الجزء الخاص بتشغيل البوت
 @app.route('/admin/dashboard')
 def admin_dashboard():
@@ -2604,6 +2605,7 @@ def admin_dashboard():
     
     conn = sqlite3.connect('science_bot.db')
     cursor = conn.cursor()
+    
     
     # 1. إجمالي عدد المستخدمين
     cursor.execute('SELECT COUNT(*) FROM users')
@@ -2753,30 +2755,15 @@ def admin_dashboard():
 
 if __name__ == '__main__':
     try:
-        # حاول استيراد Flask فقط عند الحاجة
-        from flask import Flask, request
         print("Setting up webhook...")
         bot.remove_webhook()
         time.sleep(2)
-        # تحقق من وجود متغير WEBHOOK_DOMAIN
         webhook_domain = os.getenv('WEBHOOK_DOMAIN')
         if not webhook_domain:
             raise ValueError("WEBHOOK_DOMAIN غير معرّف في ملف .env")            
         webhook_url = f"https://{webhook_domain}/{TELEGRAM_BOT_TOKEN}"
         bot.set_webhook(url=webhook_url)
         print(f"Webhook set to: {webhook_url}")        
-        app = Flask(__name__)
-        @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
-        def webhook():
-            if request.headers.get('content-type') == 'application/json':
-                json_string = request.get_data().decode('utf-8')
-                update = telebot.types.Update.de_json(json_string)
-                bot.process_new_updates([update])
-                return 'OK', 200
-            return 'Bad Request', 400
-        @app.route('/')
-        def index():
-            return 'Bot is running!', 200
         port = int(os.environ.get('PORT', 10000))
         app.run(host='0.0.0.0', port=port)
     except Exception as e:
