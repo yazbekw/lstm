@@ -2624,7 +2624,6 @@ def handle_unknown_message(message):
 
 
 
-# إضافة هذا قبل الجزء الخاص بتشغيل البوت
 @app.route('/admin/dashboard')
 def admin_dashboard():
     if not ADMIN_CHAT_ID:
@@ -2632,7 +2631,6 @@ def admin_dashboard():
     
     conn = sqlite3.connect('science_bot.db')
     cursor = conn.cursor()
-    
     
     # 1. إجمالي عدد المستخدمين
     cursor.execute('SELECT COUNT(*) FROM users')
@@ -2773,7 +2771,7 @@ def admin_dashboard():
     </html>
     """
     
-    from flask import render_template_string(template, 
+    return render_template_string(template, 
                                total_users=total_users,
                                active_users=active_users,
                                feedbacks=feedbacks)
