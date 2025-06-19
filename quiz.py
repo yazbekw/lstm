@@ -2808,48 +2808,7 @@ def admin_dashboard():
                                active_users=active_users,
                                feedbacks=feedbacks)
 
-
-@app.route('/admin/dashboard')
-def admin_dashboard():
-    if not ADMIN_CHAT_ID:
-        return "غير مسموح بالوصول", 403
-    
-    conn = sqlite3.connect('science_bot.db')
-    cursor = conn.cursor()
-    
-    # 1. إجمالي عدد المستخدمين
-    cursor.execute('SELECT COUNT(*) FROM users')
-    total_users = cursor.fetchone()[0]
-    
-    # 2. المستخدمين النشطين حالياً (خلال آخر 30 دقيقة)
-    cursor.execute('''
-    SELECT COUNT(*) FROM users 
-    WHERE datetime(last_active) > datetime('now', '-30 minutes')
-    ''')
-    active_users = cursor.fetchone()[0]
-    
-    # 3. الملاحظات الواردة من المستخدمين
-    cursor.execute('''
-    SELECT chat_id, feedback_text, created_at 
-    FROM user_feedback 
-    ORDER BY created_at DESC LIMIT 10
-    ''')
-    feedbacks = cursor.fetchall()
-    
-    conn.close()
-    
-    # HTML template للواجهة
-    template = """
-    <!DOCTYPE html>
-    <html dir="rtl" lang="ar">
-    <!-- Rest of your template here -->
-    """
-    
-    return render_template_string(template, 
-                               total_users=total_users,
-                               active_users=active_users,
-                               feedbacks=feedbacks)
-                              
+                         
 if __name__ == '__main__':
     # Start the Flask server in a separate thread
     Thread(target=lambda: app.run(
