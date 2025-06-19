@@ -22,7 +22,7 @@ import pyarabic.araby as araby
 from dotenv import load_dotenv
 from flask import Flask, request
 from flask import render_template_string
-
+app = Flask(__name__)
 
 # Load environment variables FIRST
 load_dotenv()
@@ -1512,7 +1512,7 @@ if __name__ == '__main__':
         bot.set_webhook(url=webhook_url)
         print(f"Webhook set to: {webhook_url}")
         
-        app = Flask(__name__)
+        
 
         @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
         def webhook():
