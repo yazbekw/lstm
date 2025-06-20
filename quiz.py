@@ -1537,7 +1537,7 @@ def admin_dashboard():
                                active_users=active_users,
                                feedbacks=feedbacks)
 
-                              
+
 if __name__ == '__main__':
     # Start the Flask server in a separate thread
     Thread(target=lambda: app.run(
@@ -1546,6 +1546,10 @@ if __name__ == '__main__':
         debug=False,
         use_reloader=False
     )).start()
+    
+    # تأكد من إلغاء ويب هوك قبل البدء
+    bot.remove_webhook()
+    time.sleep(1)
     
     # Start the Telegram bot polling
     while True:
