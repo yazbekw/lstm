@@ -2808,20 +2808,56 @@ def admin_dashboard():
                                active_users=active_users,
                                feedbacks=feedbacks)
 
-                         
 if __name__ == '__main__':
-    # Start the Flask server in a separate thread
-    Thread(target=lambda: app.run(
-        host='0.0.0.0',
-        port=5000,
-        debug=False,
-        use_reloader=False
-    )).start()
-    
-    # Start the Telegram bot polling
-    while True:
-        try:
-            bot.polling(none_stop=True, timeout=30)
-        except Exception as e:
-            print(f"Bot polling error: {e}")
-            time.sleep(5)
+    try:
+        # حاول استيراد Flask فقط عند الحاجة
+        from flask import Flask, request
+        
+        print("Setting up webhook...")
+        bot.remove_webhook()
+        time.sleep(2)
+        
+        # تحقق من وجود متغير WEBHOOK_DOMAIN
+        webhook_domain = os.getenv('WEBHOOK_DOMAIN')
+        if webhook_domain:
+            webhook_url = f"https://{webhook_domain}/{TELEGRAM_BOT_TOKEN}"
+            bot.set_webhook(url=webhook_url)
+            print(f"Webhook set to: {webhook_url}")
+            
+            app = Flask(__name__)
+
+            @app.route('/' + TELEGRAM_BOT_TOKEN, methods=['POST'])
+            def webhook():
+                if request.headers.get('content-type') == 'application/json':
+                    json_string = request.get_data().decode('utf-8')
+                    update = telebot.types.Update.de_json(json_string)
+                    bot.process_new_updates([update])
+                    return 'OK', 200
+                return 'Bad Request', 400
+
+            @app.route('/')
+            def index():
+                return 'Bot is running!', 200
+
+            port = int(os.environ.get('PORT', 10000))
+            app.run(host='0.0.0.0', port=port)
+        else:
+            print("WEBHOOK_DOMAIN not set, falling back to polling...")
+            bot.remove_webhook()
+            time.sleep(2)
+            bot.infinity_polling()
+
+    except Exception as e:
+        print(f"Error: {e}")
+        print("Falling back to polling...")
+        bot.remove_webhook()
+        time.sleep(2)
+        while True:
+            try:
+                bot.infinity_polling()
+            except (ReadTimeout, ConnectionError) as e:
+                print(f"Connection error: {e}, retrying in 5 seconds...")
+                time.sleep(5)
+            except Exception as e:
+                print(f"Unexpected error: {e}, restarting in 10 seconds...")
+                time.sleep(10)
